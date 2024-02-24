@@ -12,8 +12,10 @@ import android.os.Bundle
 import android.os.IBinder
 import android.widget.ImageButton
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import androidx.recyclerview.widget.RecyclerView
+import dev.aston.intensiv.nikolay.library.Library
 import dev.aston.intensiv.nikolay.library.TrackItem
 import dev.aston.intensiv.nikolay.library.TrackLibraryAdapter
 import dev.aston.intensiv.nikolay.service.Player
@@ -62,14 +64,7 @@ class MainActivity : AppCompatActivity() {
         val trackList: RecyclerView = findViewById(R.id.track_library_list)
         trackList.adapter = trackAdapter
 
-        val tracks = assets.list("mp3")
-            .orEmpty()
-            .map { fileName ->
-                TrackItem(
-                    name = fileName.substringBefore(".mp3"),
-                    fileName = fileName
-                )
-            }
+        val tracks = Library.allTracks(this)
         trackAdapter.submitList(tracks)
     }
 
@@ -78,6 +73,7 @@ class MainActivity : AppCompatActivity() {
 
         if (player == null) {
             val intent = PlayerService.createPlayTrackIntent(this, track)
+            ContextCompat.startForegroundService(this, intent)
             bindService(intent, playerServiceConnection, Context.BIND_AUTO_CREATE)
         } else {
             player.playTrack(track)
@@ -86,11 +82,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateTrackInformation() {
-        val player = playerService ?: return
+        val player = playerService
 
-        currentTrackView.text = player.currentTrack?.name ?: getString(R.string.select_track_to_play)
+        currentTrackView.text =
+            player?.currentTrack?.name ?: getString(R.string.select_track_to_play)
+
         playTrackButton.setImageResource(
-            if (player.isPlaying) {
+            if (player != null && player.isPlaying) {
                 R.drawable.ic_pause
             } else {
                 R.drawable.ic_play_arrow
@@ -106,11 +104,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onPreviousTrackClicked() {
-
+        playerService?.previousTrack()
+        updateTrackInformation()
     }
 
     private fun onNextTrackClicked() {
-
+        playerService?.nextTrack()
+        updateTrackInformation()
     }
 
     private fun setupNotificationChannel() {
@@ -130,19 +130,16 @@ class MainActivity : AppCompatActivity() {
 
         val intent = Intent(this, PlayerService::class.java)
         bindService(intent, playerServiceConnection, 0)
+
+        updateTrackInformation()
     }
 
     override fun onStop() {
         super.onStop()
 
-        playerService?.let { player ->
-            if (!player.isPlaying) {
-                player.stop()
-            }
-        }
-
         if (isBound) {
             unbindService(playerServiceConnection)
+            playerService = null
             isBound = false
         }
     }

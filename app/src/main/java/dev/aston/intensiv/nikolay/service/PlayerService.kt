@@ -9,6 +9,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import dev.aston.intensiv.nikolay.R
+import dev.aston.intensiv.nikolay.library.Library
 import dev.aston.intensiv.nikolay.library.TrackItem
 
 
@@ -32,6 +33,20 @@ class PlayerService : Service(), Player {
 
         Log.d("PlayerService", "onCreate")
         startForegroundService()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent != null) {
+            val trackFileName = intent.getStringExtra(EXTRA_PLAY_TRACK)
+            if (trackFileName != null) {
+                val track = Library.allTracks(this).find { it.fileName == trackFileName }
+                if (track != null) {
+                    playTrack(track)
+                }
+            }
+        }
+
+        return super.onStartCommand(intent, flags, startId)
     }
 
     override fun onDestroy() {
@@ -58,7 +73,7 @@ class PlayerService : Service(), Player {
             currentPlayer.release()
         }
 
-        val trackFileDescriptor = assets.openFd("mp3/${item.fileName}")
+        val trackFileDescriptor = Library.loadTrack(this, item)
         mediaPlayer = MediaPlayer().apply {
             setDataSource(
                 trackFileDescriptor.fileDescriptor,
@@ -99,11 +114,20 @@ class PlayerService : Service(), Player {
     }
 
     override fun nextTrack() {
-        TODO("Not yet implemented")
+        val allTracks = Library.allTracks(this)
+        val index = allTracks.indexOf(currentTrack)
+        if (index != -1) {
+            playTrack(allTracks[(index + 1) % allTracks.size])
+        }
     }
 
     override fun previousTrack() {
-        TODO("Not yet implemented")
+        val allTracks = Library.allTracks(this)
+        val index = allTracks.indexOf(currentTrack)
+        if (index != -1) {
+            val newIndex = if (index - 1 < 0) allTracks.size - 1 else index - 1
+            playTrack(allTracks[newIndex])
+        }
     }
 
     companion object {
