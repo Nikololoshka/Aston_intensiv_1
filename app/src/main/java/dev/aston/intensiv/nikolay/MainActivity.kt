@@ -30,13 +30,14 @@ class MainActivity : AppCompatActivity() {
     private val playerServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             playerService = (service as PlayerService.LocalBinder).getPlayer()
-            updateTrackInformation()
             isBound = true
+            updateTrackInformation()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             playerService = null
             isBound = false
+            updateTrackInformation()
         }
     }
 
