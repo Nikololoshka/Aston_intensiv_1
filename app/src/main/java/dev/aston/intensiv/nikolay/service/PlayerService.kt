@@ -1,6 +1,7 @@
 package dev.aston.intensiv.nikolay.service
 
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.media.MediaPlayer
 import android.os.Binder
@@ -11,19 +12,19 @@ import dev.aston.intensiv.nikolay.R
 import dev.aston.intensiv.nikolay.library.TrackItem
 
 
-class PlayerService : Service() {
+class PlayerService : Service(), Player {
 
     inner class LocalBinder : Binder() {
-        fun getService(): PlayerService = this@PlayerService
+        fun getPlayer(): Player = this@PlayerService
     }
     private val binder = LocalBinder()
 
-    private var player: MediaPlayer? = null
+    private var mediaPlayer: MediaPlayer? = null
 
-    var currentTrack: TrackItem? = null
+    override var currentTrack: TrackItem? = null
         private set
 
-    var isPlaying: Boolean = false
+    override var isPlaying: Boolean = false
         private set
 
     override fun onCreate() {
@@ -36,9 +37,7 @@ class PlayerService : Service() {
     override fun onDestroy() {
         super.onDestroy()
 
-        Log.d("PlayerService", "onDestroy")
-
-        val currentPlayer = player
+        val currentPlayer = mediaPlayer
         if (currentPlayer != null && currentPlayer.isPlaying) {
             currentPlayer.stop()
             currentPlayer.release()
@@ -49,8 +48,8 @@ class PlayerService : Service() {
         return binder
     }
 
-    fun playTrack(item: TrackItem) {
-        val currentPlayer = player
+    override fun playTrack(item: TrackItem) {
+        val currentPlayer = mediaPlayer
         if (currentPlayer != null) {
             if (currentTrack == item && currentPlayer.isPlaying) {
                 return
@@ -60,7 +59,7 @@ class PlayerService : Service() {
         }
 
         val trackFileDescriptor = assets.openFd("mp3/${item.fileName}")
-        player = MediaPlayer().apply {
+        mediaPlayer = MediaPlayer().apply {
             setDataSource(
                 trackFileDescriptor.fileDescriptor,
                 trackFileDescriptor.startOffset,
@@ -83,5 +82,38 @@ class PlayerService : Service() {
             .build()
 
         startForeground(PlayerNotification.PLAYER_SERVICE_ID, notification)
+    }
+
+    override fun pausePlaying() {
+        mediaPlayer?.pause()
+        isPlaying = false
+    }
+
+    override fun resumePlaying() {
+        mediaPlayer?.start()
+        isPlaying = true
+    }
+
+    override fun stop() {
+        stopSelf()
+    }
+
+    override fun nextTrack() {
+        TODO("Not yet implemented")
+    }
+
+    override fun previousTrack() {
+        TODO("Not yet implemented")
+    }
+
+    companion object {
+
+        private const val EXTRA_PLAY_TRACK = "extra_play_track"
+
+        fun createPlayTrackIntent(context: Context, track: TrackItem) : Intent {
+            return Intent(context, PlayerService::class.java).apply {
+                putExtra(EXTRA_PLAY_TRACK, track.fileName)
+            }
+        }
     }
 }

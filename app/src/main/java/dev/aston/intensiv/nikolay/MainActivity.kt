@@ -10,24 +10,25 @@ import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.os.IBinder
-import android.util.Log
+import android.widget.ImageButton
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import androidx.recyclerview.widget.RecyclerView
 import dev.aston.intensiv.nikolay.library.TrackItem
 import dev.aston.intensiv.nikolay.library.TrackLibraryAdapter
+import dev.aston.intensiv.nikolay.service.Player
 import dev.aston.intensiv.nikolay.service.PlayerNotification
 import dev.aston.intensiv.nikolay.service.PlayerService
 
 class MainActivity : AppCompatActivity() {
 
-    private var playerService: PlayerService? = null
+    private var playerService: Player? = null
     private var isBound = false
 
     private val playerServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            playerService = (service as PlayerService.LocalBinder).getService()
+            playerService = (service as PlayerService.LocalBinder).getPlayer()
+            updateTrackInformation()
             isBound = true
         }
 
@@ -37,13 +38,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private lateinit var currentTrackView: TextView
+    private lateinit var playTrackButton: ImageButton
+    private lateinit var previousTrackButton: ImageButton
+    private lateinit var nextTrackButton: ImageButton
+
+    private val trackAdapter = TrackLibraryAdapter(this::onTrackItemClicked)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-
         setupNotificationChannel()
 
-        val trackAdapter = TrackLibraryAdapter(this::onTrackItemClicked)
+        setContentView(R.layout.activity_main)
+
+        currentTrackView = findViewById(R.id.current_track_label)
+        playTrackButton = findViewById(R.id.play_pause_button)
+        playTrackButton.setOnClickListener { onPlayOrPauseTrackClicked() }
+        previousTrackButton = findViewById(R.id.prev_track_button)
+        previousTrackButton.setOnClickListener { onPreviousTrackClicked() }
+        nextTrackButton = findViewById(R.id.next_track_button)
+        nextTrackButton.setOnClickListener { onNextTrackClicked() }
+
         val trackList: RecyclerView = findViewById(R.id.track_library_list)
         trackList.adapter = trackAdapter
 
@@ -59,15 +74,43 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onTrackItemClicked(track: TrackItem) {
-        Log.d("MainActivity", "onTrackItemClicked: $track")
+        val player = playerService
 
-        playerService?.playTrack(track)
-        updateTrackInformation(track)
+        if (player == null) {
+            val intent = PlayerService.createPlayTrackIntent(this, track)
+            bindService(intent, playerServiceConnection, Context.BIND_AUTO_CREATE)
+        } else {
+            player.playTrack(track)
+            updateTrackInformation()
+        }
     }
 
-    private fun updateTrackInformation(track: TrackItem) {
-        val currentTrackView: TextView = findViewById(R.id.current_track_label)
-        currentTrackView.text = track.name
+    private fun updateTrackInformation() {
+        val player = playerService ?: return
+
+        currentTrackView.text = player.currentTrack?.name ?: getString(R.string.select_track_to_play)
+        playTrackButton.setImageResource(
+            if (player.isPlaying) {
+                R.drawable.ic_pause
+            } else {
+                R.drawable.ic_play_arrow
+            }
+        )
+    }
+
+    private fun onPlayOrPauseTrackClicked() {
+        val player = playerService ?: return
+
+        if (player.isPlaying) player.pausePlaying() else player.resumePlaying()
+        updateTrackInformation()
+    }
+
+    private fun onPreviousTrackClicked() {
+
+    }
+
+    private fun onNextTrackClicked() {
+
     }
 
     private fun setupNotificationChannel() {
@@ -86,20 +129,21 @@ class MainActivity : AppCompatActivity() {
         super.onStart()
 
         val intent = Intent(this, PlayerService::class.java)
-        ContextCompat.startForegroundService(this, intent)
-        bindService(intent, playerServiceConnection, Context.BIND_AUTO_CREATE)
-
-        Log.d("MainActivity", "onStart: bindService")
+        bindService(intent, playerServiceConnection, 0)
     }
 
     override fun onStop() {
         super.onStop()
 
+        playerService?.let { player ->
+            if (!player.isPlaying) {
+                player.stop()
+            }
+        }
+
         if (isBound) {
             unbindService(playerServiceConnection)
             isBound = false
-
-            Log.d("MainActivity", "onStop: unbindService")
         }
     }
 }
