@@ -10,9 +10,8 @@ import android.media.MediaPlayer
 import android.os.Binder
 import android.os.IBinder
 import android.util.Log
-import android.widget.Toast
+import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
-import androidx.core.content.getSystemService
 import dev.aston.intensiv.nikolay.R
 import dev.aston.intensiv.nikolay.library.Library
 import dev.aston.intensiv.nikolay.library.TrackItem
@@ -34,7 +33,10 @@ class PlayerService : Service(), Player {
     override var isPlaying: Boolean = false
         private set
 
+    private val tracks by lazy { Library.allTracks(this) }
+
     private val notificationManager by lazy { getSystemService(NotificationManager::class.java) }
+
 
     override fun onCreate() {
         super.onCreate()
@@ -58,6 +60,18 @@ class PlayerService : Service(), Player {
                             playTrack(track)
                         }
                     }
+                }
+                EXTRA_PLAYER_PREV -> {
+                    Log.d("PlayerService", "onStartCommand: EXTRA_PLAYER_PREV")
+                    previousTrack()
+                }
+                EXTRA_PLAYER_NEXT -> {
+                    Log.d("PlayerService", "onStartCommand: EXTRA_PLAYER_NEXT")
+                    nextTrack()
+                }
+                EXTRA_PLAYER_PLAY_PAUSE -> {
+                    Log.d("PlayerService", "onStartCommand: EXTRA_PLAYER_PLAY_PAUSE")
+                    if (isPlaying) pausePlaying() else resumePlaying()
                 }
             }
         }
@@ -109,10 +123,58 @@ class PlayerService : Service(), Player {
         notificationManager.notify(PlayerNotification.PLAYER_SERVICE_ID, notification)
     }
 
+    private fun buildNotificationPanel(
+        title: String,
+        isPlaying: Boolean
+    ): RemoteViews {
+        val previousPendingIntent = PendingIntent.getService(
+            this,
+            REQUEST_PREV,
+            Intent(this, PlayerService::class.java).apply {
+                putExtra(EXTRA_PLAYER_ACTION, EXTRA_PLAYER_PREV)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val nextPendingIntent = PendingIntent.getService(
+            this,
+            REQUEST_NEXT,
+            Intent(this, PlayerService::class.java).apply {
+                putExtra(EXTRA_PLAYER_ACTION, EXTRA_PLAYER_NEXT)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val playOrPausePendingIntent = PendingIntent.getService(
+            this,
+            REQUEST_PLAY,
+            Intent(this, PlayerService::class.java).apply {
+                putExtra(EXTRA_PLAYER_ACTION, EXTRA_PLAYER_PLAY_PAUSE)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+
+        return RemoteViews(packageName, R.layout.player_notification).apply {
+            setTextViewText(R.id.notification_title, title)
+            if (isPlaying) {
+                setImageViewResource(R.id.play_pause_button, R.drawable.ic_pause)
+            }
+            setOnClickPendingIntent(R.id.prev_track_button, previousPendingIntent)
+            setOnClickPendingIntent(R.id.play_pause_button, playOrPausePendingIntent)
+            setOnClickPendingIntent(R.id.next_track_button, nextPendingIntent)
+        }
+    }
+
     private fun buildTrackNotification(track: TrackItem): Notification {
         return NotificationCompat.Builder(this, PlayerNotification.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_music_note)
-            .setContentTitle(track.name)
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            .setCustomContentView(
+                buildNotificationPanel(
+                    title = track.name,
+                    isPlaying = true
+                )
+            )
+            .setShowWhen(false)
             .setOngoing(true)
             .build()
     }
@@ -129,9 +191,16 @@ class PlayerService : Service(), Player {
 
         return NotificationCompat.Builder(this, PlayerNotification.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_music_note)
-            .setContentTitle(track?.name ?: "Player is running")
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            .setCustomContentView(
+                buildNotificationPanel(
+                    title = track?.name ?: "Player is running",
+                    isPlaying = false
+                )
+            )
             .setOngoing(false)
             .setDeleteIntent(deletePendingIntent)
+            .setShowWhen(false)
             .build()
     }
 
@@ -161,28 +230,32 @@ class PlayerService : Service(), Player {
     }
 
     override fun nextTrack() {
-        val allTracks = Library.allTracks(this)
-        val index = allTracks.indexOf(currentTrack)
+        val index = tracks.indexOf(currentTrack)
         if (index != -1) {
-            playTrack(allTracks[(index + 1) % allTracks.size])
+            playTrack(tracks[(index + 1) % tracks.size])
         }
     }
 
     override fun previousTrack() {
-        val allTracks = Library.allTracks(this)
-        val index = allTracks.indexOf(currentTrack)
+        val index = tracks.indexOf(currentTrack)
         if (index != -1) {
-            val newIndex = if (index - 1 < 0) allTracks.size - 1 else index - 1
-            playTrack(allTracks[newIndex])
+            val newIndex = if (index - 1 < 0) tracks.size - 1 else index - 1
+            playTrack(tracks[newIndex])
         }
     }
 
     companion object {
 
         private const val REQUEST_STOP = 1
+        private const val REQUEST_PLAY = 2
+        private const val REQUEST_NEXT = 3
+        private const val REQUEST_PREV = 4
 
         private const val EXTRA_PLAYER_ACTION = "extra_player_action"
 
+        private const val EXTRA_PLAYER_PLAY_PAUSE = "extra_player_play_pause"
+        private const val EXTRA_PLAYER_NEXT= "extra_player_next"
+        private const val EXTRA_PLAYER_PREV = "extra_player_prev"
         private const val EXTRA_PLAYER_STOP = "extra_player_stop"
 
         private const val EXTRA_PLAY_TRACK = "extra_play_track"
